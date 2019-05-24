@@ -1,0 +1,11 @@
+{
+  "name": "babel-plugin-brahmos",
+  "version": "0.1.2",
+  "description": "Babel plugin to transform JSX to Brahmos Tagged Template literal",
+  "main": "src/index.js",
+  "author": "s-yadav <sudhanshuyadav2@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/plugin-syntax-jsx": "^7.2.0"
+  }
+}
