@@ -51,6 +51,7 @@ function BabelPluginBrahmos (babel) {
     }
 
     function createObjectProperty (name, value) {
+      value = value || t.booleanLiteral(true); // if value is not present it means the prop is of boolean type with true value
       const propName = t.identifier(name.name);
       const propValue = t.isJSXExpressionContainer(value) ? value.expression : value;
       return t.objectProperty(propName, propValue, false, propName.name === propValue.name);
