@@ -24,12 +24,29 @@ function needsToBeExpression (tagName, attrName) {
   return RESERVED_ATTRIBUTES[attrName] || (tags.includes(tagName) && attributes.includes(attrName));
 }
 
+/** Check if a template literal is an empty wrap for single expression */
+function isEmptyLiteralWrap(strings) {
+  const emptyStrings = strings.filter((strNode) => !strNode.value.raw);
+  return strings.length === 2 && emptyStrings.length === 2;
+}
+
 function BabelPluginBrahmos (babel) {
   const { types: t } = babel;
 
   function getTaggedTemplateCallExpression (node) {
     const { strings, expressions } = getLiteralParts(node);
-    const taggedTemplate = t.taggedTemplateExpression(t.identifier('html'), t.templateLiteral(strings, expressions));
+
+    /**
+     * we do not need a tagged expression if there is a single expression and two empty string part
+     * In that case we can just return the expression
+     */
+    if (expressions.length === 1 && isEmptyLiteralWrap(strings)) {
+      return expressions[0];
+    }
+
+    const brahmosHtml = t.memberExpression(t.identifier('Brahmos'), t.identifier('html'));
+
+    const taggedTemplate = t.taggedTemplateExpression(brahmosHtml, t.templateLiteral(strings, expressions));
     const callExpression = t.callExpression(taggedTemplate, []);
     return callExpression;
   }
@@ -57,6 +74,23 @@ function BabelPluginBrahmos (babel) {
       return t.objectProperty(propName, propValue, false, propName.name === propValue.name);
     }
 
+    function pushAttributeToExpressions(expression, lastExpression) {
+      /**
+       * If last expression is defined push on the same expression else create a new expression.
+       */
+      if (lastExpression) {
+        lastExpression.properties.push(...expression.properties);
+        return lastExpression;
+      }
+
+      pushToExpressions(expression);
+    
+      // keep space after expressions
+      stringPart.push(' ');
+
+      return expression;
+    }
+
     function recurseNode (node) {
       if (t.isJSXElement(node)) {
         const { openingElement, children } = node;
@@ -67,11 +101,17 @@ function BabelPluginBrahmos (babel) {
           // Handle opening tag
           stringPart.push(`<${tagName} `);
 
+          /**
+           * Keep the reference of last dynamic expression so we can add it to same object,
+           * instead of creating new expression for each attributes
+           */ 
+          let lastExpression = null;
+
           // push all attributes to opening tag
           attributes.forEach(attribute => {
             // if we encounter spread attribute, push the argument as expression
             if (t.isJSXSpreadAttribute(attribute)) {
-              pushToExpressions(attribute.argument);
+              lastExpression = pushAttributeToExpressions(attribute.argument, lastExpression);
             } else {
               const { name, value } = attribute;
               let attrName = name.name;
@@ -82,9 +122,8 @@ function BabelPluginBrahmos (babel) {
                */
 
               if (needsToBeExpression(tagName, attrName) || t.isJSXExpressionContainer(value)) {
-                pushToExpressions(createAttributeExpression(name, value));
-                // keep space after expressions
-                stringPart.push(' ');
+                const expression = createAttributeExpression(name, value);
+                lastExpression = pushAttributeToExpressions(expression, lastExpression);
               } else {
               /**
                * Check if attrName needs to be changed, to form html attribute like className -> class
@@ -93,6 +132,9 @@ function BabelPluginBrahmos (babel) {
                */
                 attrName = propertyToAttrMap[attrName] || attrName;
                 stringPart.push(` ${attrName}${value ? `="${value.value}" ` : ''}`);
+
+                //reset the lastExpression value, as static part comes between two dynamic parts
+                lastExpression = null;
               }
             }
           });
@@ -129,7 +171,8 @@ function BabelPluginBrahmos (babel) {
             createElementArguments.push(getTaggedTemplateCallExpression(children));
           }
 
-          const expression = t.callExpression(t.identifier('createElement'), createElementArguments);
+          const brahmosCreateElement = t.memberExpression(t.identifier('Brahmos'), t.identifier('createElement'));
+          const expression = t.callExpression(brahmosCreateElement, createElementArguments);
 
           pushToExpressions(expression);
         }
