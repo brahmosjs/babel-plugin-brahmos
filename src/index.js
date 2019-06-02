@@ -79,6 +79,24 @@ function BabelPluginBrahmos (babel) {
        * If last expression is defined push on the same expression else create a new expression.
        */
       if (lastExpression) {
+        const isLastExpressionAnObject = !t.isObjectExpression(lastExpression);
+        
+        /**
+         * if last expression is not an object covert it to object expression and
+         * reset the last value of expressions array
+         */
+        if (!t.isObjectExpression(lastExpression)) {
+          lastExpression = t.objectExpression([t.spreadElement(lastExpression)]);
+          expressions[expressions.length - 1] = lastExpression;
+        }
+
+        /**
+         * If the new expression is not an object expression convert it into object expression
+         */
+        if (!t.isObjectExpression(expression)) {
+          expression = t.objectExpression([t.spreadElement(expression)]);
+        }
+
         lastExpression.properties.push(...expression.properties);
         return lastExpression;
       }
