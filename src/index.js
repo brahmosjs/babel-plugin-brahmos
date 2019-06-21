@@ -5,6 +5,61 @@ const RESERVED_ATTRIBUTES = {
   ref: 1,
 };
 
+/**
+ * Method to remove newlines and extra spaces which does not render on browser
+ * Logic taken from
+ * https://github.com/babel/babel/blob/master/packages/babel-types/src/utils/react/cleanJSXElementLiteralChild.js
+ */
+function cleanStringForHtml (rawStr) {
+  const lines = rawStr.split(/\r\n|\n|\r/);
+
+  let lastNonEmptyLine = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].match(/[^ \t]/)) {
+      lastNonEmptyLine = i;
+    }
+  }
+
+  let str = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    const isFirstLine = i === 0;
+    const isLastLine = i === lines.length - 1;
+    const isLastNonEmptyLine = i === lastNonEmptyLine;
+
+    // replace rendered whitespace tabs with spaces
+    let trimmedLine = line.replace(/\t/g, ' ');
+
+    // trim whitespace touching a newline
+    if (!isFirstLine) {
+      trimmedLine = trimmedLine.replace(/^[ ]+/, '');
+    }
+
+    // trim whitespace touching an endline
+    if (!isLastLine) {
+      trimmedLine = trimmedLine.replace(/[ ]+$/, '');
+    }
+
+    if (trimmedLine) {
+      if (!isLastNonEmptyLine) {
+        trimmedLine += ' ';
+      }
+
+      str += trimmedLine;
+    }
+  }
+
+  return str;
+}
+
+/**
+ * Check if an element is html element or not.
+ * same as what react does for jsx
+ * https://github.com/babel/babel/blob/master/packages/babel-types/src/validators/react/isCompatTag.js
+ */
 function isHTMLElement (tagName) {
   // Must start with a lowercase ASCII letter
   return !!tagName && /^[a-z]/.test(tagName);
@@ -25,7 +80,7 @@ function needsToBeExpression (tagName, attrName) {
 }
 
 /** Check if a template literal is an empty wrap for single expression */
-function isEmptyLiteralWrap(strings) {
+function isEmptyLiteralWrap (strings) {
   const emptyStrings = strings.filter((strNode) => !strNode.value.raw);
   return strings.length === 2 && emptyStrings.length === 2;
 }
@@ -74,13 +129,28 @@ function BabelPluginBrahmos (babel) {
       return t.objectProperty(propName, propValue, false, propName.name === propValue.name);
     }
 
-    function pushAttributeToExpressions(expression, lastExpression) {
+    /**
+    * Convert an JSXExpression / JSXMemberExpression to Identifier or MemberExpression
+    */
+    function jsxToObject (node) {
+      if (t.isJSXIdentifier(node)) {
+        return t.identifier(node.name);
+      } else if (t.isJSXMemberExpression(node)) {
+        /**
+         * recursively change object property of JSXMemberExpression
+         * to MemberExpression
+         */
+        const objectNode = jsxToObject(node.object);
+        const property = jsxToObject(node.property);
+        return t.memberExpression(objectNode, property);
+      }
+    }
+
+    function pushAttributeToExpressions (expression, lastExpression) {
       /**
        * If last expression is defined push on the same expression else create a new expression.
        */
       if (lastExpression) {
-        const isLastExpressionAnObject = !t.isObjectExpression(lastExpression);
-        
         /**
          * if last expression is not an object covert it to object expression and
          * reset the last value of expressions array
@@ -102,7 +172,7 @@ function BabelPluginBrahmos (babel) {
       }
 
       pushToExpressions(expression);
-    
+
       // keep space after expressions
       stringPart.push(' ');
 
@@ -122,7 +192,7 @@ function BabelPluginBrahmos (babel) {
           /**
            * Keep the reference of last dynamic expression so we can add it to same object,
            * instead of creating new expression for each attributes
-           */ 
+           */
           let lastExpression = null;
 
           // push all attributes to opening tag
@@ -151,7 +221,7 @@ function BabelPluginBrahmos (babel) {
                 attrName = propertyToAttrMap[attrName] || attrName;
                 stringPart.push(` ${attrName}${value ? `="${value.value}" ` : ''}`);
 
-                //reset the lastExpression value, as static part comes between two dynamic parts
+                // reset the lastExpression value, as static part comes between two dynamic parts
                 lastExpression = null;
               }
             }
@@ -181,7 +251,7 @@ function BabelPluginBrahmos (babel) {
           });
 
           const createElementArguments = [
-            t.identifier(componentName.name),
+            jsxToObject(componentName),
             t.objectExpression(props),
           ];
 
@@ -195,7 +265,8 @@ function BabelPluginBrahmos (babel) {
           pushToExpressions(expression);
         }
       } else if (t.isJSXText(node)) {
-        stringPart.push(node.value);
+        const cleanStr = cleanStringForHtml(node.value);
+        if (cleanStr) stringPart.push(cleanStr);
       } else if (t.isJSXExpressionContainer(node) && !t.isJSXEmptyExpression(node.expression)) {
         pushToExpressions(node.expression);
       } else if (Array.isArray(node)) {
@@ -221,7 +292,7 @@ function BabelPluginBrahmos (babel) {
     const tagExpression = getTaggedTemplateCallExpression(node);
     path.replaceWith(tagExpression);
   }
-  
+
   return {
     name: 'brahmos',
     inherits: jsx,
