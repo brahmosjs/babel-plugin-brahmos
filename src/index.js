@@ -121,7 +121,7 @@ function isSvgHasDynamicPart (part) {
 function BabelPluginBrahmos (babel) {
   const { types: t } = babel;
 
-  function getTaggedTemplateCallExpression (path) {
+  function getTaggedTemplate (path) {
     const { strings, expressions } = getLiteralParts(path);
     /**
      * we do not need a tagged expression if there is a single expression and two empty string part
@@ -133,9 +133,7 @@ function BabelPluginBrahmos (babel) {
 
     const brahmosHtml = t.memberExpression(t.identifier('Brahmos'), t.identifier('html'));
 
-    const taggedTemplate = t.taggedTemplateExpression(brahmosHtml, t.templateLiteral(strings, expressions));
-    const callExpression = t.callExpression(taggedTemplate, []);
-    return callExpression;
+    return t.taggedTemplateExpression(brahmosHtml, t.templateLiteral(strings, expressions));
   }
 
   function getLiteralParts (rootPath) {
@@ -307,7 +305,7 @@ function BabelPluginBrahmos (babel) {
           ];
 
           if (children && children.length) {
-            createElementArguments.push(getTaggedTemplateCallExpression(path.get('children')));
+            createElementArguments.push(getTaggedTemplate(path.get('children')));
           }
 
           const brahmosCreateElement = t.memberExpression(t.identifier('Brahmos'), t.identifier('createElement'));
@@ -337,7 +335,7 @@ function BabelPluginBrahmos (babel) {
   }
 
   function visitorCallback (path) {
-    const tagExpression = getTaggedTemplateCallExpression(path);
+    const tagExpression = getTaggedTemplate(path);
     path.replaceWith(tagExpression);
   }
 
