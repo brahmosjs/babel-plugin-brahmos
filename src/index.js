@@ -317,7 +317,18 @@ function BabelPluginBrahmos (babel) {
         const cleanStr = cleanStringForHtml(node.value);
         if (cleanStr) stringPart.push(cleanStr);
       } else if (t.isJSXExpressionContainer(node) && !t.isJSXEmptyExpression(node.expression)) {
-        pushToExpressions(node.expression);
+        const { expression } = node;
+        if (t.isIdentifier(expression) ||
+          t.isCallExpression(expression) ||
+          t.isMemberExpression(expression) ||
+          t.isArrayExpression(expression)
+        ) {
+          const brahmosExpression = t.memberExpression(t.identifier('Brahmos'), t.identifier('expression'));
+          const brahmosExpressionCall = t.callExpression(brahmosExpression, [expression]);
+          pushToExpressions(brahmosExpressionCall);
+        } else {
+          pushToExpressions(expression);
+        }
       } else if (t.isJSXFragment(node)) {
         path.get('children').forEach(recursePath);
       }
