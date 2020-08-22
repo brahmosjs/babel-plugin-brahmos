@@ -1,17 +1,34 @@
-const jsx = require('@babel/plugin-syntax-jsx').default;
-const SVG_ATTRIBUTE_MAP = require('./svgAttributeMap');
+const jsx = require("@babel/plugin-syntax-jsx").default;
+const SVG_ATTRIBUTE_MAP = require("./svgAttributeMap");
 
 const RESERVED_ATTRIBUTES = {
   key: 1,
   ref: 1,
 };
 
+const SELF_CLOSING_TAGS = [
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+];
+
 /**
  * Method to remove newlines and extra spaces which does not render on browser
  * Logic taken from
  * https://github.com/babel/babel/blob/master/packages/babel-types/src/utils/react/cleanJSXElementLiteralChild.js
  */
-function cleanStringForHtml (rawStr) {
+function cleanStringForHtml(rawStr) {
   const lines = rawStr.split(/\r\n|\n|\r/);
 
   let lastNonEmptyLine = 0;
@@ -22,7 +39,7 @@ function cleanStringForHtml (rawStr) {
     }
   }
 
-  let str = '';
+  let str = "";
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -32,21 +49,21 @@ function cleanStringForHtml (rawStr) {
     const isLastNonEmptyLine = i === lastNonEmptyLine;
 
     // replace rendered whitespace tabs with spaces
-    let trimmedLine = line.replace(/\t/g, ' ');
+    let trimmedLine = line.replace(/\t/g, " ");
 
     // trim whitespace touching a newline
     if (!isFirstLine) {
-      trimmedLine = trimmedLine.replace(/^[ ]+/, '');
+      trimmedLine = trimmedLine.replace(/^[ ]+/, "");
     }
 
     // trim whitespace touching an endline
     if (!isLastLine) {
-      trimmedLine = trimmedLine.replace(/[ ]+$/, '');
+      trimmedLine = trimmedLine.replace(/[ ]+$/, "");
     }
 
     if (trimmedLine) {
       if (!isLastNonEmptyLine) {
-        trimmedLine += ' ';
+        trimmedLine += " ";
       }
 
       str += trimmedLine;
@@ -61,30 +78,33 @@ function cleanStringForHtml (rawStr) {
  * same as what react does for jsx
  * https://github.com/babel/babel/blob/master/packages/babel-types/src/validators/react/isCompatTag.js
  */
-function isHTMLElement (tagName) {
+function isHTMLElement(tagName) {
   // Must start with a lowercase ASCII letter
   return !!tagName && /^[a-z]/.test(tagName);
-};
+}
 
 const propertyToAttrMap = {
-  'className': 'class',
-  'htmlFor': 'for',
-  'acceptCharset': 'accept-charset',
-  'httpEquiv': 'http-equiv',
+  className: "class",
+  htmlFor: "for",
+  acceptCharset: "accept-charset",
+  httpEquiv: "http-equiv",
   ...SVG_ATTRIBUTE_MAP,
 };
 
-function needsToBeExpression (tagName, attrName) {
+function needsToBeExpression(tagName, attrName) {
   /**
    * TODO: No need to change value attribute of a checkbox or radio button.
    */
-  const tags = ['input', 'select', 'textarea'];
-  const attributes = ['value', 'defaultValue', 'checked', 'defaultChecked'];
-  return RESERVED_ATTRIBUTES[attrName] || (tags.includes(tagName) && attributes.includes(attrName));
+  const tags = ["input", "select", "textarea"];
+  const attributes = ["value", "defaultValue", "checked", "defaultChecked"];
+  return (
+    RESERVED_ATTRIBUTES[attrName] ||
+    (tags.includes(tagName) && attributes.includes(attrName))
+  );
 }
 
 /** Check if a template literal is an empty wrap for single expression */
-function isEmptyLiteralWrap (strings) {
+function isEmptyLiteralWrap(strings) {
   const emptyStrings = strings.filter((strNode) => !strNode.value.raw);
   return strings.length === 2 && emptyStrings.length === 2;
 }
@@ -92,7 +112,7 @@ function isEmptyLiteralWrap (strings) {
 /**
  * Check if svg has a dynamic part either as attribute or node part
  */
-function isSvgHasDynamicPart (part) {
+function isSvgHasDynamicPart(part) {
   let hasDynamicPart = false;
 
   const setDynamicPart = (path) => {
@@ -118,10 +138,10 @@ function isSvgHasDynamicPart (part) {
   return hasDynamicPart;
 }
 
-function BabelPluginBrahmos (babel) {
+function BabelPluginBrahmos(babel) {
   const { types: t } = babel;
 
-  function getTaggedTemplate (path) {
+  function getTaggedTemplate(path) {
     const { strings, expressions } = getLiteralParts(path);
     /**
      * we do not need a tagged expression if there is a single expression and two empty string part
@@ -131,32 +151,38 @@ function BabelPluginBrahmos (babel) {
       return expressions[0];
     }
 
-    const brahmosHtml = t.memberExpression(t.identifier('Brahmos'), t.identifier('html'));
+    const brahmosHtml = t.memberExpression(
+      t.identifier("Brahmos"),
+      t.identifier("html")
+    );
 
-    return t.taggedTemplateExpression(brahmosHtml, t.templateLiteral(strings, expressions));
+    return t.taggedTemplateExpression(
+      brahmosHtml,
+      t.templateLiteral(strings, expressions)
+    );
   }
 
-  function getLiteralParts (rootPath) {
+  function getLiteralParts(rootPath) {
     const strings = [];
     const expressions = [];
     let stringPart = [];
 
-    function pushToStrings (tail) {
-      const string = stringPart.join('');
+    function pushToStrings(tail) {
+      const string = stringPart.join("");
       strings.push(t.templateElement({ raw: string, cooked: string }, tail));
       stringPart = [];
     }
 
-    function pushToExpressions (expression) {
+    function pushToExpressions(expression) {
       pushToStrings();
       expressions.push(expression);
     }
 
-    function createAttributeExpression (name, value) {
+    function createAttributeExpression(name, value) {
       return t.objectExpression([createAttributeProperty(name, value)]);
     }
 
-    function createAttributeProperty (name, value) {
+    function createAttributeProperty(name, value) {
       value = value || t.booleanLiteral(true); // if value is not present it means the prop is of boolean type with true value
 
       let attrNameStr = name.name;
@@ -164,18 +190,25 @@ function BabelPluginBrahmos (babel) {
       // if attribute has svg attribute mapping use that, otherwise use plain attribute
       attrNameStr = SVG_ATTRIBUTE_MAP[attrNameStr] || attrNameStr;
 
-      const propName = attrNameStr.match('-|:')
+      const propName = attrNameStr.match("-|:")
         ? t.stringLiteral(attrNameStr)
         : t.identifier(attrNameStr);
 
-      const propValue = t.isJSXExpressionContainer(value) ? value.expression : value;
-      return t.objectProperty(propName, propValue, false, propName.name === propValue.name);
+      const propValue = t.isJSXExpressionContainer(value)
+        ? value.expression
+        : value;
+      return t.objectProperty(
+        propName,
+        propValue,
+        false,
+        propName.name === propValue.name
+      );
     }
 
     /**
-    * Convert an JSXExpression / JSXMemberExpression to Identifier or MemberExpression
-    */
-    function jsxToObject (node) {
+     * Convert an JSXExpression / JSXMemberExpression to Identifier or MemberExpression
+     */
+    function jsxToObject(node) {
       if (t.isJSXIdentifier(node)) {
         return t.identifier(node.name);
       } else if (t.isJSXMemberExpression(node)) {
@@ -189,7 +222,7 @@ function BabelPluginBrahmos (babel) {
       }
     }
 
-    function pushAttributeToExpressions (expression, lastExpression) {
+    function pushAttributeToExpressions(expression, lastExpression) {
       /**
        * If last expression is defined push on the same expression else create a new expression.
        */
@@ -199,7 +232,9 @@ function BabelPluginBrahmos (babel) {
          * reset the last value of expressions array
          */
         if (!t.isObjectExpression(lastExpression)) {
-          lastExpression = t.objectExpression([t.spreadElement(lastExpression)]);
+          lastExpression = t.objectExpression([
+            t.spreadElement(lastExpression),
+          ]);
           expressions[expressions.length - 1] = lastExpression;
         }
 
@@ -217,12 +252,12 @@ function BabelPluginBrahmos (babel) {
       pushToExpressions(expression);
 
       // keep space after expressions
-      stringPart.push(' ');
+      stringPart.push(" ");
 
       return expression;
     }
 
-    function recursePath (path, isSVGPart) {
+    function recursePath(path, isSVGPart) {
       const { node } = path;
 
       if (Array.isArray(path)) {
@@ -232,9 +267,12 @@ function BabelPluginBrahmos (babel) {
         const { attributes, name } = openingElement;
         const tagName = name.name;
 
-        isSVGPart = isSVGPart || tagName === 'svg';
+        isSVGPart = isSVGPart || tagName === "svg";
 
-        if (isHTMLElement(tagName) && !(tagName === 'svg' && isSvgHasDynamicPart(path))) {
+        if (
+          isHTMLElement(tagName) &&
+          !(tagName === "svg" && isSvgHasDynamicPart(path))
+        ) {
           // Handle opening tag
           stringPart.push(`<${tagName} `);
 
@@ -245,10 +283,13 @@ function BabelPluginBrahmos (babel) {
           let lastExpression = null;
 
           // push all attributes to opening tag
-          attributes.forEach(attribute => {
+          attributes.forEach((attribute) => {
             // if we encounter spread attribute, push the argument as expression
             if (t.isJSXSpreadAttribute(attribute)) {
-              lastExpression = pushAttributeToExpressions(attribute.argument, lastExpression);
+              lastExpression = pushAttributeToExpressions(
+                attribute.argument,
+                lastExpression
+              );
             } else {
               const { name, value } = attribute;
               let attrName = name.name;
@@ -258,17 +299,25 @@ function BabelPluginBrahmos (babel) {
                * then push it to expression other wise push it as string part
                */
 
-              if (needsToBeExpression(tagName, attrName) || t.isJSXExpressionContainer(value)) {
+              if (
+                needsToBeExpression(tagName, attrName) ||
+                t.isJSXExpressionContainer(value)
+              ) {
                 const expression = createAttributeExpression(name, value);
-                lastExpression = pushAttributeToExpressions(expression, lastExpression);
+                lastExpression = pushAttributeToExpressions(
+                  expression,
+                  lastExpression
+                );
               } else {
-              /**
-               * Check if attrName needs to be changed, to form html attribute like className -> class
-               * Change the property name only if the value is string type so at comes along with
-               * string part. In case of value is expression we don't need to do it
-               */
+                /**
+                 * Check if attrName needs to be changed, to form html attribute like className -> class
+                 * Change the property name only if the value is string type so at comes along with
+                 * string part. In case of value is expression we don't need to do it
+                 */
                 attrName = propertyToAttrMap[attrName] || attrName;
-                stringPart.push(` ${attrName}${value ? `="${value.value}" ` : ''}`);
+                stringPart.push(
+                  ` ${attrName}${value ? `="${value.value}" ` : ""}`
+                );
 
                 // reset the lastExpression value, as static part comes between two dynamic parts
                 lastExpression = null;
@@ -276,21 +325,24 @@ function BabelPluginBrahmos (babel) {
             }
           });
 
-          stringPart.push('>');
+          stringPart.push(">");
 
           // handle children
-          path.get('children').forEach(recursePath);
+          path.get("children").forEach(recursePath);
 
-          // handle closing tag
-          stringPart.push(`</${tagName}>`);
+          // handle closing tag, don't add it for self closing tags
+          if (!SELF_CLOSING_TAGS.includes(tagName)) {
+            stringPart.push(`</${tagName}>`);
+          }
         } else {
-          const componentName = name.name === 'svg'
-            ? t.stringLiteral(name.name)
-            : jsxToObject(name);
+          const componentName =
+            name.name === "svg"
+              ? t.stringLiteral(name.name)
+              : jsxToObject(name);
 
           // add props
           const props = [];
-          attributes.forEach(attribute => {
+          attributes.forEach((attribute) => {
             if (t.isJSXSpreadAttribute(attribute)) {
               props.push(t.spreadElement(attribute.argument));
             } else {
@@ -305,21 +357,32 @@ function BabelPluginBrahmos (babel) {
           ];
 
           if (children && children.length) {
-            createElementArguments.push(getTaggedTemplate(path.get('children')));
+            createElementArguments.push(
+              getTaggedTemplate(path.get("children"))
+            );
           }
 
-          const brahmosCreateElement = t.memberExpression(t.identifier('Brahmos'), t.identifier('createElement'));
-          const expression = t.callExpression(brahmosCreateElement, createElementArguments);
+          const brahmosCreateElement = t.memberExpression(
+            t.identifier("Brahmos"),
+            t.identifier("createElement")
+          );
+          const expression = t.callExpression(
+            brahmosCreateElement,
+            createElementArguments
+          );
 
           pushToExpressions(expression);
         }
       } else if (t.isJSXText(node)) {
         const cleanStr = cleanStringForHtml(node.value);
         if (cleanStr) stringPart.push(cleanStr);
-      } else if (t.isJSXExpressionContainer(node) && !t.isJSXEmptyExpression(node.expression)) {
+      } else if (
+        t.isJSXExpressionContainer(node) &&
+        !t.isJSXEmptyExpression(node.expression)
+      ) {
         pushToExpressions(node.expression);
       } else if (t.isJSXFragment(node)) {
-        path.get('children').forEach(recursePath);
+        path.get("children").forEach(recursePath);
       }
     }
 
@@ -334,13 +397,13 @@ function BabelPluginBrahmos (babel) {
     };
   }
 
-  function visitorCallback (path) {
+  function visitorCallback(path) {
     const tagExpression = getTaggedTemplate(path);
     path.replaceWith(tagExpression);
   }
 
   return {
-    name: 'brahmos',
+    name: "brahmos",
     inherits: jsx,
     visitor: {
       JSXElement: visitorCallback,
