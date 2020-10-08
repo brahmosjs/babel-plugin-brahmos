@@ -1,0 +1,10 @@
+# dot files
+.prettierrc
+.gitignore
+.npmignore
+
+# rollup config
+rollup.cofig.js
+
+# src folder
+src
