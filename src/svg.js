@@ -3,7 +3,7 @@ import { isHTMLElement } from './utils';
 /**
  * Check if svg has a dynamic part either as attribute or node part
  */
-export function isSvgHasDynamicPart (part) {
+export function isSvgHasDynamicPart(part) {
   let hasDynamicPart = false;
 
   const setDynamicPart = (path) => {
