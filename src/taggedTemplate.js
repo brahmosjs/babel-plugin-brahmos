@@ -9,6 +9,7 @@ import {
   isEmptyLiteralWrap,
   createAttributeExpression,
   createAttributeProperty,
+  getPropValue,
 } from './utils';
 
 import { isSvgHasDynamicPart } from './svg';
@@ -23,7 +24,7 @@ import {
 /**
  * Convert an JSXExpression / JSXMemberExpression to Identifier or MemberExpression
  */
-function jsxToObject (node) {
+function jsxToObject(node) {
   if (t.isJSXIdentifier(node)) {
     return t.identifier(node.name);
   } else if (t.isJSXMemberExpression(node)) {
@@ -37,7 +38,31 @@ function jsxToObject (node) {
   }
 }
 
-function getLiteralParts (rootPath) {
+/**
+ * Check if element needs to be transformed as jsx function call
+ */
+function needsToBeJSXCall(path) {
+  const { openingElement } = path.node;
+
+  const { attributes, name } = openingElement;
+  const tagName = name.name;
+
+  // if its a component transform to jsx call
+  if (!isHTMLElement(tagName)) return true;
+
+  // if it has key attribute, convert to jsx call
+  const hasKeyAttribute = attributes.some(
+    (attribute) => t.isJSXAttribute(attribute) && attribute.name.name === 'key',
+  );
+  if (hasKeyAttribute) return true;
+
+  // if it is svg with some dynamic part
+  if (tagName === 'svg' && isSvgHasDynamicPart(path)) return true;
+
+  return false;
+}
+
+function getLiteralParts(rootPath) {
   const strings = [];
   const expressions = [];
   let stringPart = [];
@@ -45,13 +70,13 @@ function getLiteralParts (rootPath) {
 
   let elementCounter = 0;
 
-  function pushToStrings (tail) {
+  function pushToStrings(tail) {
     const string = stringPart.join('');
     strings.push(t.templateElement({ raw: string, cooked: string }, tail));
     stringPart = [];
   }
 
-  function pushToExpressions (expression, path, isAttribute) {
+  function pushToExpressions(expression, path, isAttribute) {
     pushToStrings();
 
     const parent = getNonFragmentParent(path);
@@ -74,7 +99,7 @@ function getLiteralParts (rootPath) {
     expressions.push(expression);
   }
 
-  function pushAttributeToExpressions (expression, lastExpression, path) {
+  function pushAttributeToExpressions(expression, lastExpression, path) {
     /**
      * If last expression is defined push on the same expression else create a new expression.
      */
@@ -107,7 +132,7 @@ function getLiteralParts (rootPath) {
     return expression;
   }
 
-  function recursePath (path, isSVGPart) {
+  function recursePath(path, isSVGPart) {
     const { node } = path;
 
     if (Array.isArray(path)) {
@@ -119,7 +144,7 @@ function getLiteralParts (rootPath) {
 
       isSVGPart = isSVGPart || tagName === 'svg';
 
-      if (isHTMLElement(tagName) && !(tagName === 'svg' && isSvgHasDynamicPart(path))) {
+      if (!needsToBeJSXCall(path)) {
         node.elementCounter = elementCounter;
         node.staticAttributes = [];
         elementCounter += 1;
@@ -156,7 +181,16 @@ function getLiteralParts (rootPath) {
                * string part. In case of value is expression we don't need to do it
                */
               attrName = PROPERTY_ATTRIBUTE_MAP[attrName] || attrName;
-              stringPart.push(` ${attrName}${value ? `="${value.value}" ` : ''}`);
+              let attrString = ` ${attrName}`;
+
+              if (value) {
+                const attrValue = value.value;
+                // By default use the double quote to wrap value, but if value have double quote then use single quote
+                const quote = attrValue.includes('"') ? `'` : `"`;
+                attrString = `${attrString}=${quote}${attrValue}${quote}`;
+              }
+
+              stringPart.push(attrString);
 
               node.staticAttributes.push(attribute);
 
@@ -176,30 +210,47 @@ function getLiteralParts (rootPath) {
           stringPart.push(`</${tagName}>`);
         }
       } else {
-        const componentName = name.name === 'svg' ? t.stringLiteral(name.name) : jsxToObject(name);
+        const componentName = isHTMLElement(name.name)
+          ? t.stringLiteral(name.name)
+          : jsxToObject(name);
 
         // add props
         const props = [];
+
+        let keyValue;
+
         attributes.forEach((attribute) => {
           if (t.isJSXSpreadAttribute(attribute)) {
             props.push(t.spreadElement(attribute.argument));
           } else {
             let { name, value } = attribute;
-            props.push(createAttributeProperty(name, value));
+            if (name.name === 'key') {
+              keyValue = getPropValue(value);
+            } else {
+              props.push(createAttributeProperty(name, value));
+            }
           }
         });
 
-        const createElementArguments = [componentName, t.objectExpression(props)];
+        const jsxArguments = [componentName, t.objectExpression(props)];
 
+        // if the node has children add it in props
         if (children && children.length) {
-          createElementArguments.push(getTaggedTemplate(path.get('children')));
+          props.push(
+            createAttributeProperty(
+              t.identifier('children'),
+              getTaggedTemplate(path.get('children')),
+            ),
+          );
         }
 
-        const brahmosCreateElement = t.memberExpression(
-          t.identifier('Brahmos'),
-          t.identifier('createElement'),
-        );
-        const expression = t.callExpression(brahmosCreateElement, createElementArguments);
+        // add key if present on arguments
+        if (keyValue) {
+          jsxArguments.push(keyValue);
+        }
+
+        const brahmosJSXFunction = t.identifier('_brahmosJSX');
+        const expression = t.callExpression(brahmosJSXFunction, jsxArguments);
 
         pushToExpressions(expression, path, false);
       }
@@ -229,8 +280,9 @@ function getLiteralParts (rootPath) {
   };
 }
 
-export default function getTaggedTemplate (path) {
+export default function getTaggedTemplate(path) {
   const { strings, expressions, partsMeta } = getLiteralParts(path);
+
   /**
    * we do not need a tagged expression if there is a single expression and two empty string part
    * In that case we can just return the expression
@@ -239,10 +291,10 @@ export default function getTaggedTemplate (path) {
     return expressions[0];
   }
 
-  const brahmosHtml = t.memberExpression(t.identifier('Brahmos'), t.identifier('html'));
+  const brahmosHtmlFunction = t.identifier('_brahmosHtml');
 
   const taggedTemplate = t.taggedTemplateExpression(
-    brahmosHtml,
+    brahmosHtmlFunction,
     t.templateLiteral(strings, expressions),
   );
 
