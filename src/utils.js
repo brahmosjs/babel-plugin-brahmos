@@ -102,10 +102,7 @@ export function createAttributeExpression(name, value) {
 export function addBrahmosRuntime(programPath) {
   const jsxImport = t.importSpecifier(t.identifier('_brahmosJSX'), t.identifier('jsx'));
   const htmlImport = t.importSpecifier(t.identifier('_brahmosHtml'), t.identifier('html'));
-  const importStatement = t.importDeclaration(
-    [jsxImport, htmlImport],
-    t.stringLiteral('brahmos/jsx-runtime'),
-  );
+  const importStatement = t.importDeclaration([jsxImport, htmlImport], t.stringLiteral('brahmos'));
 
   programPath.node.body.unshift(importStatement);
 
