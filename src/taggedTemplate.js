@@ -89,7 +89,7 @@ function getLiteralParts(rootPath) {
     };
 
     if (isAttribute) {
-      partsMeta.attributeIndex = path.node.staticAttributes.length;
+      partMeta.attributeIndex = path.node.staticAttributes.length;
     } else {
       partMeta = { ...partMeta, ...getPreviousSiblingIndex(path) };
     }
