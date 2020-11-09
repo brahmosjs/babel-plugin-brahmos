@@ -82,10 +82,7 @@ export function getPropValue(value) {
 export function createAttributeProperty(name, value) {
   value = value || t.booleanLiteral(true); // if value is not present it means the prop is of boolean type with true value
 
-  let attrNameStr = name.name;
-
-  // if attribute has svg attribute mapping use that, otherwise use plain attribute
-  attrNameStr = SVG_ATTRIBUTE_MAP[attrNameStr] || attrNameStr;
+  const attrNameStr = name.name;
 
   const propName = attrNameStr.match('-|:')
     ? t.stringLiteral(attrNameStr)
