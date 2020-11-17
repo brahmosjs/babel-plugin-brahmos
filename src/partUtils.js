@@ -152,6 +152,22 @@ export function getPreviousSiblingIndex(path) {
   };
 }
 
+// check if the node is native html element (static element)
+function isHTMLNode(node) {
+  if (!t.isJSXElement(node)) return false;
+  const tagName = node.openingElement.name.name;
+
+  /**
+   * We treat svg element as non html node to find the wrapping
+   * as svg can be converted into expression part
+   */
+  return isHTMLElement(tagName) && tagName !== 'svg';
+}
+
+function isRenderableText(node) {
+  return t.isJSXText(node) && !!cleanStringForHtml(node.value);
+}
+
 /**
  * check if expression nodes are wrapped around text node, if it is than
  * we will have to add a placeholder comment node in between so both text does not combine
@@ -173,18 +189,7 @@ export function isWrappedWithString(path) {
   let nodeIndex = children.indexOf(node);
   const prevNode = children[nodeIndex - 1];
 
-  if (!(prevNode && t.isJSXText(prevNode))) return false;
-
-  const isHTMLNode = (node) => {
-    if (!t.isJSXElement(node)) return false;
-    const tagName = node.openingElement.name.name;
-
-    /**
-     * We treat svg element as non html node to find the wrapping
-     * as svg can be converted into expression part
-     */
-    return isHTMLElement(tagName) && tagName !== 'svg';
-  };
+  if (!(prevNode && isRenderableText(prevNode))) return false;
 
   /**
    * If we have consecutive expression nodes we have to ignore expression node and
@@ -192,7 +197,7 @@ export function isWrappedWithString(path) {
    */
   let nextNode;
   while ((nextNode = children[nodeIndex + 1])) {
-    if (t.isJSXText(nextNode)) {
+    if (isRenderableText(nextNode)) {
       return true;
     } else if (t.isJSXExpressionContainer(nextNode) || !isHTMLNode(nextNode)) {
       nodeIndex += 1;
@@ -201,5 +206,5 @@ export function isWrappedWithString(path) {
     }
   }
 
-  return prevNode && nextNode && t.isJSXText(prevNode) && t.isJSXText(nextNode);
+  return prevNode && nextNode && isRenderableText(prevNode) && isRenderableText(nextNode);
 }
