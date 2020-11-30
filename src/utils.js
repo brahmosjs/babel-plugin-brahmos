@@ -1,5 +1,5 @@
 import t from '@babel/types';
-import { RESERVED_ATTRIBUTES, SVG_ATTRIBUTE_MAP } from './constants';
+import { RESERVED_ATTRIBUTES } from './constants';
 /**
  * Method to remove newlines and extra spaces which does not render on browser
  * Logic taken from
