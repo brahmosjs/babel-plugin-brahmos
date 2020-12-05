@@ -280,7 +280,36 @@ function getLiteralParts(rootPath) {
   };
 }
 
+function getSingleTextChild(path) {
+  /**
+   * If the path is children list and has single text child, return that child
+   */
+  let jsxText;
+  if (Array.isArray(path) && path.length === 1 && t.isJSXText(path[0].node)) {
+    jsxText = path[0].node;
+  }
+
+  /**
+   * If the path is JSX fragment and has single text child, return that child
+   */
+  if (
+    t.isJSXFragment(path.node) &&
+    path.node.children.length === 1 &&
+    t.isJSXText(path.node.children[0])
+  ) {
+    jsxText = path.node.children[0];
+  }
+
+  return jsxText && t.stringLiteral(cleanStringForHtml(jsxText.value));
+}
+
 export default function getTaggedTemplate(path) {
+  /**
+   * If the path is children text child no need to wrap it inside tagged template literal
+   */
+  const singleTextChild = getSingleTextChild(path);
+  if (singleTextChild) return singleTextChild;
+
   const { strings, expressions, partsMeta } = getLiteralParts(path);
 
   /**
